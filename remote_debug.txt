@@ -4,6 +4,7 @@ Installing
 2.  nvidia-docker run -v /mnt/wrk/dataset/street_numbers_600k:/workspace/voc -d -P --rm --ipc=host -it retinanet:latest
 3.  docker container ls
     # Now you can connect via ssh root@locahost -p <port>
+    pswd:pass
 
 PyCharm Debug
 1. Open Settings and Project Interpreter
