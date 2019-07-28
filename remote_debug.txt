@@ -1,0 +1,15 @@
+Installing
+
+1.  docker build -t retinanet:latest retinanet/
+2.  nvidia-docker run -v /mnt/wrk/dataset/street_numbers_600k:/workspace/voc -d -P --rm --ipc=host -it retinanet:latest
+3.  docker container ls
+    # Now you can connect via ssh root@locahost -p <port>
+
+PyCharm Debug
+1. Open Settings and Project Interpreter
+2. Click Add and use SSH Interpreter
+3. Configure remote connection and python path /opt/conda/bin/python
+
+
+    SVHN 33402
+    train retinanet_rn34fpn.pth --backbone ResNet34FPN --classes 10 --val-iters 4175 --images /workspace/voc/train/images/ --annotations /workspace/voc/train.json  --val-images /workspace/voc/test/images/ --val-annotations /workspace/voc/test.json

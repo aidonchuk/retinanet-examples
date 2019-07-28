@@ -14,3 +14,5 @@ dist
 *.pkl
 *.torch
 *.plan
+*.idea
+/idea
