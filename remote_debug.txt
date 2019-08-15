@@ -13,4 +13,4 @@ PyCharm Debug
 
 Start main with params
 #SVHN 33402
-train retinanet_rn34fpn.pth --backbone ResNet34FPN --classes 10 --val-iters 4175 --images /workspace/voc/train/images/ --annotations /workspace/voc/train.json  --val-images /workspace/voc/test/images/ --val-annotations /workspace/voc/test.json
+train retinanet_rn50fpn.pth --backbone ResNet50FPN --classes 11 --val-iters 2088 --images /workspace/voc/train/images/ --annotations /workspace/voc/train.json --val-images /workspace/voc/test/images/ --val-annotations /workspace/voc/test.json

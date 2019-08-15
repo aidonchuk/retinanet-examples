@@ -1,19 +1,21 @@
-import os
 import json
+import os
 import tempfile
 from contextlib import redirect_stdout
+
 import torch
 from apex import amp
 from apex.parallel import DistributedDataParallel as DDP
-from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 
-from .data import DataIterator
 from .dali import DaliDataIterator
+from .data import DataIterator
 from .model import Model
 from .utils import Profiler
 
-def infer(model, path, detections_file, resize, max_size, batch_size, mixed_precision=True, is_master=True, world=0, annotations=None, use_dali=True, is_validation=False, verbose=True):
+
+def infer(model, path, detections_file, resize, max_size, batch_size, mixed_precision=True, is_master=True, world=0,
+          annotations=None, use_dali=True, is_validation=False, verbose=True):
     'Run inference on images from path'
 
     backend = 'pytorch' if isinstance(model, Model) or isinstance(model, DDP) else 'tensorrt'
@@ -23,8 +25,8 @@ def infer(model, path, detections_file, resize, max_size, batch_size, mixed_prec
     # Create annotations if none was provided
     if not annotations:
         annotations = tempfile.mktemp('.json')
-        images = [{ 'id': i, 'file_name': f} for i, f in enumerate(os.listdir(path))]
-        json.dump({ 'images': images }, open(annotations, 'w'))
+        images = [{'id': i, 'file_name': f} for i, f in enumerate(os.listdir(path))]
+        json.dump({'images': images}, open(annotations, 'w'))
 
     # TensorRT only supports fixed input sizes, so override input size accordingly
     if backend == 'tensorrt': max_size = max(model.input_size)
@@ -43,9 +45,9 @@ def infer(model, path, detections_file, resize, max_size, batch_size, mixed_prec
         if not is_validation:
             if torch.cuda.is_available(): model = model.cuda()
             model = amp.initialize(model, None,
-                               opt_level = 'O2' if mixed_precision else 'O0',
-                               keep_batchnorm_fp32 = True,
-                               verbosity = 0)
+                                   opt_level='O2' if mixed_precision else 'O0',
+                                   keep_batchnorm_fp32=True,
+                                   verbosity=0)
 
         model.eval()
 
@@ -54,7 +56,7 @@ def infer(model, path, detections_file, resize, max_size, batch_size, mixed_prec
         print('    device: {} {}'.format(
             world, 'cpu' if not torch.cuda.is_available() else 'gpu' if world == 1 else 'gpus'))
         print('     batch: {}, precision: {}'.format(batch_size,
-            'unknown' if backend is 'tensorrt' else 'mixed' if mixed_precision else 'full'))
+                                                     'unknown' if backend is 'tensorrt' else 'mixed' if mixed_precision else 'full'))
         print('Running inference...')
 
     results = []
@@ -71,8 +73,8 @@ def infer(model, path, detections_file, resize, max_size, batch_size, mixed_prec
             profiler.bump('infer')
             if verbose and (profiler.totals['infer'] > 60 or i == len(data_iterator) - 1):
                 size = len(data_iterator.ids)
-                msg  = '[{:{len}}/{}]'.format(min((i + 1) * batch_size,
-                    size), size, len=len(str(size)))
+                msg = '[{:{len}}/{}]'.format(min((i + 1) * batch_size,
+                                                 size), size, len=len(str(size)))
                 msg += ' {:.3f}s/{}-batch'.format(profiler.means['infer'], batch_size)
                 msg += ' (fw: {:.3f}s)'.format(profiler.means['fw'])
                 msg += ', {:.1f} im/s'.format(batch_size / profiler.means['infer'])
@@ -122,7 +124,7 @@ def infer(model, path, detections_file, resize, max_size, batch_size, mixed_prec
         if detections:
             # Save detections
             if detections_file and verbose: print('Writing {}...'.format(detections_file))
-            detections = { 'annotations': detections }
+            detections = {'annotations': detections}
             detections['images'] = data_iterator.coco.dataset['images']
             if 'categories' in data_iterator.coco.dataset:
                 detections['categories'] = [data_iterator.coco.dataset['categories']]
@@ -138,5 +140,9 @@ def infer(model, path, detections_file, resize, max_size, batch_size, mixed_prec
                     coco_eval.evaluate()
                     coco_eval.accumulate()
                 coco_eval.summarize()
+                # print(coco_eval.stats)
+                return 1 - 2 * (coco_eval.stats[0] * coco_eval.stats[8] / (coco_eval.stats[0] + coco_eval.stats[8]))
         else:
             print('No detections!')
+
+    return 'asd'

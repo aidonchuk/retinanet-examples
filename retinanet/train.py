@@ -5,7 +5,7 @@ import torch
 from apex import amp
 from apex.parallel import DistributedDataParallel
 from torch.optim import Adam
-from torch.optim.lr_scheduler import ReduceLROnPlateau, LambdaLR
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from .backbones.layers import convert_fixedbn_model
 from .dali import DaliDataIterator
@@ -44,15 +44,15 @@ def train(model, state, path, annotations, val_path, val_annotations, resize, ma
     if 'optimizer' in state:
         optimizer.load_state_dict(state['optimizer'])
 
-    #'''
+    '''
     def schedule(train_iter):
         if warmup and train_iter <= warmup:
             return 0.9 * train_iter / warmup + 0.1
         return gamma ** len([m for m in milestones if m <= train_iter])
     scheduler = LambdaLR(optimizer, schedule)
-    #'''
+    '''
 
-    #scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=2, verbose=True)
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=2, verbose=True)
 
     # Prepare dataset
     if verbose: print('Preparing dataset...')
@@ -79,7 +79,7 @@ def train(model, state, path, annotations, val_path, val_annotations, resize, ma
     while iteration < iterations:
         cls_losses, box_losses = [], []
         for i, (data, target) in enumerate(data_iterator):
-            scheduler.step(iteration)
+            # scheduler.step(iteration)
 
             # Forward pass
             profiler.start('fw')
@@ -156,11 +156,12 @@ def train(model, state, path, annotations, val_path, val_annotations, resize, ma
                 del cls_losses[:], box_losses[:]
 
             if val_annotations and (iteration == iterations or iteration % val_iterations == 0):
-                infer(model, val_path, None, resize, max_size, batch_size, annotations=val_annotations,
+                f1_m = infer(model, val_path, None, resize, max_size, batch_size, annotations=val_annotations,
                              mixed_precision=mixed_precision, is_master=is_master, world=world, use_dali=use_dali,
                              is_validation=True, verbose=False)
-                #if not isinstance(loss, str):
-                    #scheduler.step(loss)
+                if not isinstance(f1_m, str):
+                    print('f1_m:' + str(f1_m))
+                    scheduler.step(f1_m)
                 model.train()
 
             if iteration == iterations:
