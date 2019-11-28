@@ -1,11 +1,15 @@
 import os
 import random
 from contextlib import redirect_stdout
-from PIL import Image
+
+import albumentations as A
 import torch
 import torch.nn.functional as F
-from torch.utils import data
+from PIL import Image
+import numpy as np
 from pycocotools.coco import COCO
+from torch.utils import data
+
 
 class CocoDataset(data.dataset.Dataset):
     'Dataset looping through a set of images'
@@ -25,7 +29,7 @@ class CocoDataset(data.dataset.Dataset):
             self.coco = COCO(annotations)
         self.ids = list(self.coco.imgs.keys())
         if 'categories' in self.coco.dataset:
-            self.categories_inv = { k: i for i, k in enumerate(self.coco.getCatIds()) }
+            self.categories_inv = {k: i for i, k in enumerate(self.coco.getCatIds())}
 
     def __len__(self):
         return len(self.ids)
@@ -38,7 +42,7 @@ class CocoDataset(data.dataset.Dataset):
         if self.coco:
             image = self.coco.loadImgs(id)[0]['file_name']
         im = Image.open('{}/{}'.format(self.path, image)).convert("RGB")
-        
+
         # Randomly sample scale for resize during training
         resize = self.resize
         if isinstance(resize, list):
@@ -55,17 +59,38 @@ class CocoDataset(data.dataset.Dataset):
             boxes *= ratio
 
             # Random horizontal flip
-            if random.randint(0, 1):
-                im = im.transpose(Image.FLIP_LEFT_RIGHT)
-                boxes[:, 0] = im.size[0] - boxes[:, 0] - boxes[:, 2]
+            # if random.randint(0, 1):
+            #    im = im.transpose(Image.FLIP_LEFT_RIGHT)
+            #    boxes[:, 0] = im.size[0] - boxes[:, 0] - boxes[:, 2]
 
-            target = torch.cat([boxes, categories], dim=1)
+            annotations = {'image': np.asarray(im), 'bboxes': np.asarray(boxes),
+                           'category_id': np.asarray(categories)}
 
+            #print(image)
+            aug = self.get_aug([
+                #A.RandomSizedBBoxSafeCrop(width=512, height=512, erosion_rate=0.2, p=0.3),
+                A.RGBShift(p=0.5),
+                A.Blur(blur_limit=11, p=0.5),
+                A.RandomBrightnessContrast(p=0.5),
+                A.CLAHE(p=0.5),
+                A.RandomGamma(p=0.5)
+            ])
+
+            try:
+                augmented = aug(**annotations)
+                im, boxes, categories = augmented['image'], torch.tensor(augmented['bboxes']), torch.tensor(
+                    augmented['category_id'])
+                target = torch.cat([boxes, categories], dim=1)
+                im = Image.fromarray(im)
+                # print(str(image) + ' ' + str(target))
+            except Exception as e:
+                print(image)
+                print(e)
         # Convert to tensor and normalize
         data = torch.ByteTensor(torch.ByteStorage.from_buffer(im.tobytes()))
         data = data.float().div(255).view(*im.size[::-1], len(im.mode))
         data = data.permute(2, 0, 1)
-        
+
         for t, mean, std in zip(data, self.mean, self.std):
             t.sub_(mean).div_(std)
 
@@ -78,10 +103,14 @@ class CocoDataset(data.dataset.Dataset):
 
         return data, id, ratio
 
+    def get_aug(self, aug, min_area=0., min_visibility=0.):
+        return A.Compose(aug, A.BboxParams(format='coco', min_area=min_area,
+                                           min_visibility=min_visibility, label_fields=['category_id']))
+
     def _get_target(self, id):
         'Get annotations for sample'
 
-        ann_ids = self.coco.getAnnIds(imgIds=id)
+        ann_ids = self.coco.getAnnIds(imgIds=[id])
         annotations = self.coco.loadAnns(ann_ids)
 
         boxes, categories = [], []
@@ -90,13 +119,13 @@ class CocoDataset(data.dataset.Dataset):
                 continue
             boxes.append(ann['bbox'])
             cat = ann['category_id']
-            if 'categories' in self.coco.dataset:
-                cat = self.categories_inv[cat]
+            # if 'categories' in self.coco.dataset:
+            #    cat = self.categories_inv[cat]
             categories.append(cat)
 
         if boxes:
             target = (torch.FloatTensor(boxes),
-                torch.FloatTensor(categories).unsqueeze(1))
+                      torch.FloatTensor(categories).unsqueeze(1))
         else:
             target = (torch.ones([1, 4]), torch.ones([1, 1]) * -1)
 
@@ -131,6 +160,7 @@ class CocoDataset(data.dataset.Dataset):
         ratios = torch.FloatTensor(ratios).view(-1, 1, 1)
         return data, torch.IntTensor(indices), ratios
 
+
 class DataIterator():
     'Data loader for data parallel'
 
@@ -139,14 +169,15 @@ class DataIterator():
         self.max_size = max_size
 
         self.dataset = CocoDataset(path, resize=resize, max_size=max_size,
-            stride=stride, annotations=annotations, training=training)
+                                   stride=stride, annotations=annotations, training=training)
         self.ids = self.dataset.ids
         self.coco = self.dataset.coco
-    
+
         self.sampler = data.distributed.DistributedSampler(self.dataset) if world > 1 else None
         self.dataloader = data.DataLoader(self.dataset, batch_size=batch_size // world,
-            sampler=self.sampler, collate_fn=self.dataset.collate_fn, num_workers=2, pin_memory=True)
-        
+                                          sampler=self.sampler, collate_fn=self.dataset.collate_fn, num_workers=2,
+                                          pin_memory=True)
+
     def __repr__(self):
         return '\n'.join([
             '    loader: pytorch',
@@ -155,7 +186,7 @@ class DataIterator():
 
     def __len__(self):
         return len(self.dataloader)
-        
+
     def __iter__(self):
         for output in self.dataloader:
             if self.dataset.training:
@@ -175,4 +206,3 @@ class DataIterator():
                     ids = ids.cuda(non_blocking=True)
                     ratio = ratio.cuda(non_blocking=True)
                 yield data, ids, ratio
-  

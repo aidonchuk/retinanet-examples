@@ -1,6 +1,7 @@
-import os.path
 import io
 import math
+import os.path
+
 import torch
 import torch.nn as nn
 
@@ -8,6 +9,7 @@ from . import backbones as backbones_mod
 from ._C import Engine
 from .box import generate_anchors, snap_to_anchors, decode, nms
 from .loss import FocalLoss, SmoothL1Loss
+
 
 class Model(nn.Module):
     'RetinaNet - https://arxiv.org/abs/1708.02002'
@@ -23,13 +25,13 @@ class Model(nn.Module):
         self.exporting = False
 
         self.ratios = [1.0, 2.0, 0.5]
-        self.scales = [4 * 2**(i/3) for i in range(3)]
+        self.scales = [4 * 2 ** (i / 3) for i in range(3)]
         self.anchors = {}
         self.classes = classes
 
-        self.threshold  = config.get('threshold', 0.05)
-        self.top_n      = config.get('top_n', 1000)
-        self.nms        = config.get('nms', 0.5)
+        self.threshold = config.get('threshold', 0.05)
+        self.top_n = config.get('top_n', 1000)
+        self.nms = config.get('nms', 0.5)
         self.detections = config.get('detections', 100)
 
         self.stride = max([b.stride for _, b in self.backbones.items()])
@@ -66,7 +68,7 @@ class Model(nn.Module):
             state_dict = self.state_dict()
             chk = torch.load(pre_trained, map_location=lambda storage, loc: storage)
             ignored = ['cls_head.8.bias', 'cls_head.8.weight']
-            weights = { k: v for k, v in chk['state_dict'].items() if k not in ignored }
+            weights = {k: v for k, v in chk['state_dict'].items() if k not in ignored}
             state_dict.update(weights)
             self.load_state_dict(state_dict)
 
@@ -84,6 +86,7 @@ class Model(nn.Module):
                     nn.init.normal_(layer.weight, std=0.01)
                     if layer.bias is not None:
                         nn.init.constant_(layer.bias, val=0)
+
             self.cls_head.apply(initialize_layer)
             self.box_head.apply(initialize_layer)
 
@@ -93,6 +96,7 @@ class Model(nn.Module):
             b = - math.log((1 - pi) / pi)
             nn.init.constant_(layer.bias, b)
             nn.init.normal_(layer.weight, std=0.01)
+
         self.cls_head[-1].apply(initialize_prior)
 
     def forward(self, x):
@@ -126,7 +130,7 @@ class Model(nn.Module):
 
             # Decode and filter boxes
             decoded.append(decode(cls_head, box_head, stride,
-                self.threshold, self.top_n, self.anchors[stride]))
+                                  self.threshold, self.top_n, self.anchors[stride]))
 
         # Perform non-maximum suppression
         decoded = [torch.cat(tensors, 1) for tensors in zip(*decoded)]
@@ -181,7 +185,11 @@ class Model(nn.Module):
             if key in state:
                 checkpoint[key] = state[key]
 
-        torch.save(checkpoint, state['path'])
+        dir_name = state['path'][:-4]
+        if not os.path.exists(dir_name):
+            os.makedirs(dir_name)
+
+        torch.save(checkpoint, dir_name + '/' + str(state['iteration']) + '_' + state['path'])
 
     @classmethod
     def load(cls, filename):
@@ -203,7 +211,8 @@ class Model(nn.Module):
 
         return model, state
 
-    def export(self, size, batch, precision, calibration_files, calibration_table, verbose, onnx_only=False, opset=None):
+    def export(self, size, batch, precision, calibration_files, calibration_table, verbose, onnx_only=False,
+               opset=None):
         import torch.onnx.symbolic
 
         if opset is not None and opset < 9:
@@ -213,8 +222,9 @@ class Model(nn.Module):
                 height_scale = float(output_size[-2]) / input.type().sizes()[-2]
                 width_scale = float(output_size[-1]) / input.type().sizes()[-1]
                 return g.op("Upsample", input,
-                    scales_f=(1, 1, height_scale, width_scale),
-                    mode_s="nearest")
+                            scales_f=(1, 1, height_scale, width_scale),
+                            mode_s="nearest")
+
             torch.onnx.symbolic.upsample_nearest2d = upsample_nearest2d
 
         # Export to ONNX
@@ -222,7 +232,7 @@ class Model(nn.Module):
         self.exporting = True
         onnx_bytes = io.BytesIO()
         zero_input = torch.zeros([1, 3, *size]).cuda()
-        extra_args = { 'opset_version': opset } if opset else {}
+        extra_args = {'opset_version': opset} if opset else {}
         torch.onnx.export(self.cuda(), zero_input, onnx_bytes, *extra_args)
         self.exporting = False
 
@@ -231,7 +241,8 @@ class Model(nn.Module):
 
         # Build TensorRT engine
         model_name = '_'.join([k for k, _ in self.backbones.items()])
-        anchors = [generate_anchors(stride, self.ratios, self.scales).view(-1).tolist() 
-            for stride in self.strides]
+        anchors = [generate_anchors(stride, self.ratios, self.scales).view(-1).tolist()
+                   for stride in self.strides]
         return Engine(onnx_bytes.getvalue(), len(onnx_bytes.getvalue()), batch, precision,
-            self.threshold, self.top_n, anchors, self.nms, self.detections, calibration_files, model_name, calibration_table, verbose)
+                      self.threshold, self.top_n, anchors, self.nms, self.detections, calibration_files, model_name,
+                      calibration_table, verbose)

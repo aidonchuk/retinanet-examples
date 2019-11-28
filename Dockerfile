@@ -2,6 +2,8 @@ FROM nvcr.io/nvidia/pytorch:19.05-py3
 
 COPY . retinanet/
 RUN pip install --no-cache-dir -e retinanet/
+RUN pip install tensorboardx
+RUN pip install albumentations
 
 RUN apt-get update && apt-get install -y openssh-server
 RUN mkdir /var/run/sshd
