@@ -33,12 +33,12 @@ def parse(args):
     parser_train.add_argument('--resize', metavar='scale', type=int, help='resize to given size', default=1280)
     parser_train.add_argument('--max-size', metavar='max', type=int, help='maximum resizing size', default=1280)
     parser_train.add_argument('--jitter', metavar='min max', type=int, nargs=2, help='jitter size within range', default=[1024, 1280])
-    parser_train.add_argument('--iters', metavar='number', type=int, help='number of iterations to train for', default=20000)
+    parser_train.add_argument('--iters', metavar='number', type=int, help='number of iterations to train for', default=90000)
     parser_train.add_argument('--milestones', action='store', type=int, nargs='*', help='list of iteration indices where learning rate decays', default=[15000, 30000])
     parser_train.add_argument('--schedule', metavar='scale', type=float, help='scale schedule (affecting iters and milestones)', default=1)
     parser_train.add_argument('--full-precision', help='train in full precision', action='store_true')
     parser_train.add_argument('--lr', metavar='value', help='learning rate', type=float, default=0.0001)
-    parser_train.add_argument('--warmup', metavar='iterations', help='numer of warmup iterations', type=int, default=200)
+    parser_train.add_argument('--warmup', metavar='iterations', help='numer of warmup iterations', type=int, default=500)
     parser_train.add_argument('--gamma', metavar='value', type=float, help='multiplicative factor of learning rate decay', default=0.1)
     parser_train.add_argument('--override', help='override model', action='store_true')
     parser_train.add_argument('--val-annotations', metavar='path', type=str, help='path to COCO style validation annotations')
@@ -48,6 +48,7 @@ def parse(args):
     parser_train.add_argument('--logdir', metavar='logdir', type=str, help='directory where to write logs')
     parser_train.add_argument('--val-iters', metavar='number', type=int, help='number of iterations between each validation', default=20)
     parser_train.add_argument('--with-dali', help='use dali for data loading', action='store_true')
+    parser_train.add_argument('--crop-number', help='crop number', type=bool, default=False)
 
     parser_infer = subparsers.add_parser('infer', help='run inference')
     parser_infer.add_argument('model', type=str, help='path to model')
@@ -129,7 +130,8 @@ def worker(rank, args, world, model, state):
                     args.batch, int(args.iters * args.schedule), args.val_iters, not args.full_precision, args.lr,
                     args.warmup, [int(m * args.schedule) for m in args.milestones], args.gamma,
                     is_master=(rank == 0), world=world, use_dali=args.with_dali,
-                    metrics_url=args.post_metrics, logdir=args.logdir, verbose=(rank == 0))
+                    metrics_url=args.post_metrics, logdir=args.logdir,
+                    verbose=(rank == 0), crop_number=args.crop_number)
 
     elif args.command == 'infer':
         if model is None:

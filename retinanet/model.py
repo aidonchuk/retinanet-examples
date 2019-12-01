@@ -32,7 +32,7 @@ class Model(nn.Module):
         self.threshold = config.get('threshold', 0.05)
         self.top_n = config.get('top_n', 1000)
         self.nms = config.get('nms', 0.5)
-        self.detections = config.get('detections', 100)
+        self.detections = config.get('detections', 8)
 
         self.stride = max([b.stride for _, b in self.backbones.items()])
 
@@ -211,7 +211,7 @@ class Model(nn.Module):
 
         return model, state
 
-    def export(self, size, batch, precision, calibration_files, calibration_table, verbose, onnx_only=False,
+    def export(self, size, batch, precision, calibration_files, calibration_table, verbose, onnx_only=True,
                opset=None):
         import torch.onnx.symbolic
 
