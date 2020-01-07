@@ -1,6 +1,8 @@
 import torch
+
 from ._C import decode as decode_cuda
 from ._C import nms as nms_cuda
+
 
 def generate_anchors(stride, ratio_vals, scales_vals):
     'Generate anchors coordinates from scales/ratios'
@@ -16,6 +18,7 @@ def generate_anchors(stride, ratio_vals, scales_vals):
     xy2 = 0.5 * (wh + dwh * scales) - 1
     return torch.cat([xy1, xy2], dim=1)
 
+
 def box2delta(boxes, anchors):
     'Convert boxes to deltas from anchors'
 
@@ -28,6 +31,7 @@ def box2delta(boxes, anchors):
         (boxes_ctr - anchors_ctr) / anchors_wh,
         torch.log(boxes_wh / anchors_wh)
     ], 1)
+
 
 def delta2box(deltas, anchors, size, stride):
     'Convert deltas from anchors to boxes'
@@ -45,6 +49,7 @@ def delta2box(deltas, anchors, size, stride):
         clamp(pred_ctr + 0.5 * pred_wh - 1)
     ], 1)
 
+
 def snap_to_anchors(boxes, size, stride, anchors, num_classes, device):
     'Snap target boxes (x, y, w, h) to anchors'
 
@@ -53,8 +58,8 @@ def snap_to_anchors(boxes, size, stride, anchors, num_classes, device):
 
     if boxes.nelement() == 0:
         return (torch.zeros([num_anchors, num_classes, height, width], device=device),
-            torch.zeros([num_anchors, 4, height, width], device=device),
-            torch.zeros([num_anchors, 1, height, width], device=device))
+                torch.zeros([num_anchors, 4, height, width], device=device),
+                torch.zeros([num_anchors, 1, height, width], device=device))
 
     boxes, classes = boxes.split(4, dim=1)
 
@@ -81,8 +86,8 @@ def snap_to_anchors(boxes, size, stride, anchors, num_classes, device):
     box_target = box_target.squeeze().contiguous()
 
     depth = torch.ones_like(overlap) * -1
-    depth[overlap < 0.4] = 0 # background
-    depth[overlap >= 0.5] = classes[indices][overlap >= 0.5].squeeze() + 1 # objects
+    depth[overlap < 0.4] = 0  # background
+    depth[overlap >= 0.5] = classes[indices][overlap >= 0.5].squeeze() + 1  # objects
     depth = depth.view(num_anchors, width, height).transpose(1, 2).contiguous()
 
     # Generate target classes
@@ -92,22 +97,23 @@ def snap_to_anchors(boxes, size, stride, anchors, num_classes, device):
     else:
         classes = classes[indices].long()
     classes = classes.view(-1, 1)
-    classes[overlap < 0.4] = num_classes # background has no class
+    classes[overlap < 0.4] = num_classes  # background has no class
     cls_target.scatter_(1, classes, 1)
     cls_target = cls_target[:, :num_classes].view(-1, 1, width, height, num_classes)
     cls_target = cls_target.transpose(1, 4).transpose(2, 3)
     cls_target = cls_target.squeeze().contiguous()
 
     return (cls_target.view(num_anchors, num_classes, height, width),
-        box_target.view(num_anchors, 4, height, width),
-        depth.view(num_anchors, 1, height, width))
+            box_target.view(num_anchors, 4, height, width),
+            depth.view(num_anchors, 1, height, width))
+
 
 def decode(all_cls_head, all_box_head, stride=1, threshold=0.05, top_n=1000, anchors=None):
     'Box Decoding and Filtering'
 
     if torch.cuda.is_available():
         return decode_cuda(all_cls_head.float(), all_box_head.float(),
-            anchors.view(-1).tolist(), stride, threshold, top_n)
+                           anchors.view(-1).tolist(), stride, threshold, top_n)
 
     device = all_cls_head.device
     anchors = anchors.to(device).type(all_cls_head.type())
@@ -154,6 +160,7 @@ def decode(all_cls_head, all_box_head, stride=1, threshold=0.05, top_n=1000, anc
 
     return out_scores, out_boxes, out_classes
 
+
 def nms(all_scores, all_boxes, all_classes, nms=0.5, ndetections=100):
     'Non Maximum Suppression'
 
@@ -194,8 +201,8 @@ def nms(all_scores, all_boxes, all_classes, nms=0.5, ndetections=100):
             xy2 = torch.min(boxes[:, 2:], boxes[i, 2:])
             inter = torch.prod((xy2 - xy1 + 1).clamp(0), 1)
             criterion = ((scores > scores[i]) |
-                        (inter / (areas + areas[i] - inter) <= nms) |
-                        (classes != classes[i]))
+                         (inter / (areas + areas[i] - inter) <= nms) |
+                         (classes != classes[i]))
             criterion[i] = 1
 
             # Only keep relevant boxes
@@ -205,8 +212,8 @@ def nms(all_scores, all_boxes, all_classes, nms=0.5, ndetections=100):
             areas = areas[criterion.nonzero()].view(-1)
             keep[(~criterion).nonzero()] = 0
 
-        out_scores[batch, :i+1] = scores[:i+1]
-        out_boxes[batch, :i+1, :] = boxes[:i+1, :]
-        out_classes[batch, :i+1] = classes[:i+1]
-
+        out_scores[batch, :i + 1] = scores[:i + 1]
+        out_boxes[batch, :i + 1, :] = boxes[:i + 1, :]
+        out_classes[batch, :i + 1] = classes[:i + 1]
+    print(out_scores, out_boxes, out_classes)
     return out_scores, out_boxes, out_classes

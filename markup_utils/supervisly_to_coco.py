@@ -1,8 +1,8 @@
 import json
 import os
 
-train_path = '/mnt/wrk/dataset/sec_num_prod/train_sv/ann/'
-val_path = '/mnt/wrk/dataset/sec_num_prod/val_sv/ann/'
+train_path = '/workspace/mounted_vol/dataset/train_supervisely/ann/'
+val_path = '/workspace/mounted_vol/dataset/val_supervisely/ann/'
 
 
 def mark(name, path):
@@ -26,7 +26,8 @@ def mark(name, path):
             data = json.load(json_file)
             size = data['size']
             objects = data['objects']
-            images.append({'id': id_image, 'file_name': str(i) + '.png', 'width': size['width'], 'height': size['height']})
+            images.append(
+                {'id': id_image, 'file_name': str(i) + '.png', 'width': size['width'], 'height': size['height']})
 
             for j in objects:
                 p = j['points']
@@ -54,7 +55,7 @@ def mark(name, path):
             print(annotations)
 
     r = {'images': images, 'annotations': annotations, 'categories': categories}
-    #r = json.dumps(r)
+    # r = json.dumps(r)
     with open(name + ".json", "w") as f:
         json.dump(r, f, indent=4, sort_keys=True)
 

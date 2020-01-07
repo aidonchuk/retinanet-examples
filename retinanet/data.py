@@ -3,10 +3,13 @@ import random
 from contextlib import redirect_stdout
 
 import albumentations as A
+import numpy as np
 import torch
 import torch.nn.functional as F
 from PIL import Image
-import numpy as np
+from albumentations import CLAHE, IAASharpen, IAAEmboss, RandomBrightnessContrast, RGBShift, ImageCompression, \
+    RandomGamma, ChannelShuffle, InvertImg, ToGray, RandomSnow, RandomRain, RandomFog, ChannelDropout, ISONoise, OneOf, \
+    IAAAdditiveGaussianNoise, GaussNoise, Blur, MotionBlur, MedianBlur, HueSaturationValue
 from pycocotools.coco import COCO
 from torch.utils import data
 
@@ -14,7 +17,7 @@ from torch.utils import data
 class CocoDataset(data.dataset.Dataset):
     'Dataset looping through a set of images'
 
-    def __init__(self, path, resize, max_size, stride, annotations=None, training=False):
+    def __init__(self, path, resize, max_size, stride, annotations=None, training=False, crop_number=False):
         super().__init__()
 
         self.path = os.path.expanduser(path)
@@ -24,6 +27,7 @@ class CocoDataset(data.dataset.Dataset):
         self.mean = [0.485, 0.456, 0.406]
         self.std = [0.229, 0.224, 0.225]
         self.training = training
+        self.crop_number = crop_number
 
         with redirect_stdout(None):
             self.coco = COCO(annotations)
@@ -43,6 +47,15 @@ class CocoDataset(data.dataset.Dataset):
             image = self.coco.loadImgs(id)[0]['file_name']
         im = Image.open('{}/{}'.format(self.path, image)).convert("RGB")
 
+        if self.crop_number:
+            boxes, categories = self._get_target(id)
+            for i, j in enumerate(boxes):
+                if categories[i] == 11:
+                    b = np.asarray(j, dtype=np.int)
+                    im = np.asarray(im)
+                    im = im[b[1]:b[1] + b[3], b[0]:b[0] + b[2], :]
+                    im = Image.fromarray(im)
+
         # Randomly sample scale for resize during training
         resize = self.resize
         if isinstance(resize, list):
@@ -52,28 +65,46 @@ class CocoDataset(data.dataset.Dataset):
         if ratio * max(im.size) > self.max_size:
             ratio = self.max_size / max(im.size)
         im = im.resize((int(ratio * d) for d in im.size), Image.BILINEAR)
+        # im.save(str(id) + '.png', 'PNG')
 
         if self.training:
             # Get annotations
             boxes, categories = self._get_target(id)
+            if self.crop_number:
+                boxes, categories = self.new_bbox_coords(boxes, categories)
             boxes *= ratio
-
-            # Random horizontal flip
-            # if random.randint(0, 1):
-            #    im = im.transpose(Image.FLIP_LEFT_RIGHT)
-            #    boxes[:, 0] = im.size[0] - boxes[:, 0] - boxes[:, 2]
 
             annotations = {'image': np.asarray(im), 'bboxes': np.asarray(boxes),
                            'category_id': np.asarray(categories)}
-
-            #print(image)
+            # print(image)
             aug = self.get_aug([
-                #A.RandomSizedBBoxSafeCrop(width=512, height=512, erosion_rate=0.2, p=0.3),
-                A.RGBShift(p=0.5),
-                A.Blur(blur_limit=11, p=0.5),
-                A.RandomBrightnessContrast(p=0.5),
-                A.CLAHE(p=0.5),
-                A.RandomGamma(p=0.5)
+                OneOf([
+                    CLAHE(),
+                    IAASharpen(),
+                    IAAEmboss(),
+                    RandomBrightnessContrast(),
+                    RGBShift(),
+                    ImageCompression(),
+                    RandomGamma(),
+                    ChannelShuffle(),
+                    InvertImg(),
+                    ToGray(),
+                    RandomSnow(),
+                    RandomRain(),
+                    RandomFog(),
+                    ChannelDropout(),
+                    ISONoise()
+                ], p=0.4),
+                OneOf([
+                    IAAAdditiveGaussianNoise(),
+                    GaussNoise(),
+                ], p=0.3),
+                OneOf([
+                    Blur(),
+                    MotionBlur(),
+                    MedianBlur(),
+                ], p=0.4),
+                HueSaturationValue()
             ])
 
             try:
@@ -82,7 +113,8 @@ class CocoDataset(data.dataset.Dataset):
                     augmented['category_id'])
                 target = torch.cat([boxes, categories], dim=1)
                 im = Image.fromarray(im)
-                # print(str(image) + ' ' + str(target))
+                # im.save(str(id) + '.png', 'PNG')
+                # print(str(id) + ' ' + str(boxes))
             except Exception as e:
                 print(image)
                 print(e)
@@ -102,6 +134,24 @@ class CocoDataset(data.dataset.Dataset):
             return data, target
 
         return data, id, ratio
+
+    def new_bbox_coords(self, boxes, categories):
+        boxes, categories = np.asarray(boxes), np.asarray(categories)
+        parent = None
+        for i, j in enumerate(boxes):
+            if categories[i] == 11:
+                parent = j.copy()
+        b = []
+        c = []
+        for i, j in enumerate(boxes):
+            if not categories[i] == 11:
+                if parent[0] < j[0] < (parent[0] + parent[2]) and parent[1] < j[1] < (parent[1] + parent[3]):
+                    j[0] = j[0] - parent[0]
+                    j[1] = j[1] - parent[1]
+                    b.append([j[0], j[1], j[2], j[3]])
+                    c.append(categories[i])
+
+        return torch.tensor(b), torch.tensor(c)
 
     def get_aug(self, aug, min_area=0., min_visibility=0.):
         return A.Compose(aug, A.BboxParams(format='coco', min_area=min_area,
@@ -164,12 +214,13 @@ class CocoDataset(data.dataset.Dataset):
 class DataIterator():
     'Data loader for data parallel'
 
-    def __init__(self, path, resize, max_size, batch_size, stride, world, annotations, training=False):
+    def __init__(self, path, resize, max_size, batch_size, stride, world, annotations, training=False,
+                 crop_number=False):
         self.resize = resize
         self.max_size = max_size
 
         self.dataset = CocoDataset(path, resize=resize, max_size=max_size,
-                                   stride=stride, annotations=annotations, training=training)
+                                   stride=stride, annotations=annotations, training=training, crop_number=crop_number)
         self.ids = self.dataset.ids
         self.coco = self.dataset.coco
 

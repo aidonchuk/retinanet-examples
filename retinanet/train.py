@@ -4,7 +4,7 @@ from statistics import mean
 import torch
 from apex import amp
 from apex.parallel import DistributedDataParallel
-from torch.optim import Adam
+from torch.optim import Adam, SGD
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from .backbones.layers import convert_fixedbn_model
@@ -16,7 +16,7 @@ from .utils import ignore_sigint, post_metrics, Profiler
 
 def train(model, state, path, annotations, val_path, val_annotations, resize, max_size, jitter, batch_size, iterations,
           val_iterations, mixed_precision, lr, warmup, milestones, gamma, is_master=True, world=1, use_dali=True,
-          verbose=True, metrics_url=None, logdir=None):
+          verbose=True, metrics_url=None, logdir=None, crop_number=False):
     'Train the model on the given dataset'
 
     # Prepare model
@@ -28,7 +28,7 @@ def train(model, state, path, annotations, val_path, val_annotations, resize, ma
         model = model.cuda()
 
     # Setup optimizer and schedule
-    # optimizer = SGD(model.parameters(), lr=lr, weight_decay=0.0001, momentum=0.9)
+    # optimizer = SGD(model.parameters(), lr=lr, weight_decay=0.0000001) # , momentum=0.9
     optimizer = Adam(model.parameters(), lr=lr, weight_decay=0.0000001)
 
     model, optimizer = amp.initialize(model, optimizer,
@@ -58,7 +58,7 @@ def train(model, state, path, annotations, val_path, val_annotations, resize, ma
     if verbose: print('Preparing dataset...')
     data_iterator = (DaliDataIterator if use_dali else DataIterator)(
         path, jitter, max_size, batch_size, stride,
-        world, annotations, training=True)
+        world, annotations, training=True, crop_number=crop_number)
     if verbose: print(data_iterator)
 
     if verbose:

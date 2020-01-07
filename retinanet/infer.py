@@ -13,7 +13,6 @@ from .data import DataIterator
 from .model import Model
 from .utils import Profiler
 
-
 def infer(model, path, detections_file, resize, max_size, batch_size, mixed_precision=True, is_master=True, world=0,
           annotations=None, use_dali=True, is_validation=False, verbose=True):
     'Run inference on images from path'

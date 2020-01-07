@@ -12,6 +12,8 @@ from retinanet._C import Engine
 from retinanet import infer, train
 from retinanet.model import Model
 
+CUDA_VISIBLE_DEVICES = 1
+
 
 def parse(args):
     parser = argparse.ArgumentParser(description='RetinaNet Detection Utility.')
@@ -25,36 +27,53 @@ def parse(args):
 
     parser_train = subparsers.add_parser('train', help='train a network')
     parser_train.add_argument('model', type=str, help='path to output model or checkpoint to resume from')
-    parser_train.add_argument('--annotations', metavar='path', type=str, help='path to COCO style annotations', required=True)
+    parser_train.add_argument('--annotations', metavar='path', type=str, help='path to COCO style annotations',
+                              required=True)
     parser_train.add_argument('--images', metavar='path', type=str, help='path to images', default='.')
-    parser_train.add_argument('--backbone', action='store', type=str, nargs='+', help='backbone model (or list of)', default=['ResNet50FPN'])
+    parser_train.add_argument('--backbone', action='store', type=str, nargs='+', help='backbone model (or list of)',
+                              default=['ResNet50FPN'])
     parser_train.add_argument('--classes', metavar='num', type=int, help='number of classes', default=80)
-    parser_train.add_argument('--batch', metavar='size', type=int, help='batch size', default=1*devcount)
+    parser_train.add_argument('--batch', metavar='size', type=int, help='batch size', default=1 * devcount)
     parser_train.add_argument('--resize', metavar='scale', type=int, help='resize to given size', default=1280)
     parser_train.add_argument('--max-size', metavar='max', type=int, help='maximum resizing size', default=1280)
-    parser_train.add_argument('--jitter', metavar='min max', type=int, nargs=2, help='jitter size within range', default=[1024, 1280])
-    parser_train.add_argument('--iters', metavar='number', type=int, help='number of iterations to train for', default=20000)
-    parser_train.add_argument('--milestones', action='store', type=int, nargs='*', help='list of iteration indices where learning rate decays', default=[15000, 30000])
-    parser_train.add_argument('--schedule', metavar='scale', type=float, help='scale schedule (affecting iters and milestones)', default=1)
+    parser_train.add_argument('--jitter', metavar='min max', type=int, nargs=2, help='jitter size within range',
+                              default=[1024, 1280])
+    parser_train.add_argument('--iters', metavar='number', type=int, help='number of iterations to train for',
+                              default=20000)
+    parser_train.add_argument('--milestones', action='store', type=int, nargs='*',
+                              help='list of iteration indices where learning rate decays', default=[15000, 30000])
+    parser_train.add_argument('--schedule', metavar='scale', type=float,
+                              help='scale schedule (affecting iters and milestones)', default=1)
     parser_train.add_argument('--full-precision', help='train in full precision', action='store_true')
     parser_train.add_argument('--lr', metavar='value', help='learning rate', type=float, default=0.0001)
-    parser_train.add_argument('--warmup', metavar='iterations', help='numer of warmup iterations', type=int, default=200)
-    parser_train.add_argument('--gamma', metavar='value', type=float, help='multiplicative factor of learning rate decay', default=0.1)
+    parser_train.add_argument('--warmup', metavar='iterations', help='numer of warmup iterations', type=int,
+                              default=200)
+    parser_train.add_argument('--gamma', metavar='value', type=float,
+                              help='multiplicative factor of learning rate decay', default=0.1)
     parser_train.add_argument('--override', help='override model', action='store_true')
-    parser_train.add_argument('--val-annotations', metavar='path', type=str, help='path to COCO style validation annotations')
+    parser_train.add_argument('--val-annotations', metavar='path', type=str,
+                              help='path to COCO style validation annotations')
     parser_train.add_argument('--val-images', metavar='path', type=str, help='path to validation images')
     parser_train.add_argument('--post-metrics', metavar='url', type=str, help='post metrics to specified url')
     parser_train.add_argument('--fine-tune', metavar='path', type=str, help='fine tune a pretrained model')
     parser_train.add_argument('--logdir', metavar='logdir', type=str, help='directory where to write logs')
-    parser_train.add_argument('--val-iters', metavar='number', type=int, help='number of iterations between each validation', default=20)
+    parser_train.add_argument('--val-iters', metavar='number', type=int,
+                              help='number of iterations between each validation', default=20)
     parser_train.add_argument('--with-dali', help='use dali for data loading', action='store_true')
+    parser_train.add_argument('--crop-number', help='crop number', type=bool, default=False)
+    parser_train.add_argument('--model-threshold', type=float, default=0.05)
+    parser_train.add_argument('--model-top-n', type=int, default=1000)
+    parser_train.add_argument('--model-nms', type=float, default=0.5)
+    parser_train.add_argument('--model-detections', type=int, default=100)
 
     parser_infer = subparsers.add_parser('infer', help='run inference')
     parser_infer.add_argument('model', type=str, help='path to model')
     parser_infer.add_argument('--images', metavar='path', type=str, help='path to images', default='.')
-    parser_infer.add_argument('--annotations', metavar='annotations', type=str, help='evaluate using provided annotations')
-    parser_infer.add_argument('--output', metavar='file', type=str, help='save detections to specified JSON file', default='detections.json')
-    parser_infer.add_argument('--batch', metavar='size', type=int, help='batch size', default=2*devcount)
+    parser_infer.add_argument('--annotations', metavar='annotations', type=str,
+                              help='evaluate using provided annotations')
+    parser_infer.add_argument('--output', metavar='file', type=str, help='save detections to specified JSON file',
+                              default='detections.json')
+    parser_infer.add_argument('--batch', metavar='size', type=int, help='batch size', default=2 * devcount)
     parser_infer.add_argument('--resize', metavar='scale', type=int, help='resize to given size', default=800)
     parser_infer.add_argument('--max-size', metavar='max', type=int, help='maximum resizing size', default=1333)
     parser_infer.add_argument('--with-dali', help='use dali for data loading', action='store_true')
@@ -63,14 +82,21 @@ def parse(args):
     parser_export = subparsers.add_parser('export', help='export a model into a TensorRT engine')
     parser_export.add_argument('model', type=str, help='path to model')
     parser_export.add_argument('export', type=str, help='path to exported output')
-    parser_export.add_argument('--size', metavar='height width', type=int, nargs='+', help='input size (square) or sizes (h w) to use when generating TensorRT engine', default=[1280])
-    parser_export.add_argument('--batch', metavar='size', type=int, help='max batch size to use for TensorRT engine', default=2)
+    parser_export.add_argument('--size', metavar='height width', type=int, nargs='+',
+                               help='input size (square) or sizes (h w) to use when generating TensorRT engine',
+                               default=[1280])
+    parser_export.add_argument('--batch', metavar='size', type=int, help='max batch size to use for TensorRT engine',
+                               default=2)
     parser_export.add_argument('--full-precision', help='export in full instead of half precision', action='store_true')
     parser_export.add_argument('--int8', help='calibrate model and export in int8 precision', action='store_true')
     parser_export.add_argument('--opset', metavar='version', type=int, help='ONNX opset version')
-    parser_export.add_argument('--calibration-batches', metavar='size', type=int, help='number of batches to use for int8 calibration', default=10)
-    parser_export.add_argument('--calibration-images', metavar='path', type=str, help='path to calibration images to use for int8 calibration', default="")
-    parser_export.add_argument('--calibration-table', metavar='path', type=str, help='path of existing calibration table to load from, or name of new calibration table', default="")
+    parser_export.add_argument('--calibration-batches', metavar='size', type=int,
+                               help='number of batches to use for int8 calibration', default=10)
+    parser_export.add_argument('--calibration-images', metavar='path', type=str,
+                               help='path to calibration images to use for int8 calibration', default="")
+    parser_export.add_argument('--calibration-table', metavar='path', type=str,
+                               help='path of existing calibration table to load from, or name of new calibration table',
+                               default="")
     parser_export.add_argument('--verbose', help='enable verbose logging', action='store_true')
 
     return parser.parse_args(args)
@@ -86,7 +112,9 @@ def load_model(args, verbose=False):
 
     if args.command == 'train' and (not os.path.exists(args.model) or args.override):
         if verbose: print('Initializing model...')
-        model = Model(args.backbone, args.classes)
+        model = Model(args.backbone, args.classes,
+                      config={'threshold': args.model_threshold, 'top_n': args.model_top_n, 'nms': args.model_nms,
+                              'detections': args.model_detections})
         model.initialize(args.fine_tune)
         if verbose: print(model)
 
@@ -129,7 +157,8 @@ def worker(rank, args, world, model, state):
                     args.batch, int(args.iters * args.schedule), args.val_iters, not args.full_precision, args.lr,
                     args.warmup, [int(m * args.schedule) for m in args.milestones], args.gamma,
                     is_master=(rank == 0), world=world, use_dali=args.with_dali,
-                    metrics_url=args.post_metrics, logdir=args.logdir, verbose=(rank == 0))
+                    metrics_url=args.post_metrics, logdir=args.logdir, verbose=(rank == 0),
+                    crop_number=args.crop_number)
 
     elif args.command == 'infer':
         if model is None:
@@ -168,7 +197,7 @@ def worker(rank, args, world, model, state):
             precision = "FP16"
 
         exported = model.export(input_size, args.batch, precision, calibration_files, args.calibration_table,
-                                args.verbose, onnx_only=onnx_only, opset=args.opset)
+                                args.verbose, onnx_only=onnx_only)
         if onnx_only:
             with open(args.export, 'wb') as out:
                 out.write(exported)
@@ -189,6 +218,10 @@ def main(args=None):
         worker(0, args, 1, model, state)
     else:
         torch.multiprocessing.spawn(worker, args=(args, world, model, state), nprocs=world)
+
+
+def get_model_trt(path):
+    return Engine.load(path)
 
 
 if __name__ == '__main__':
